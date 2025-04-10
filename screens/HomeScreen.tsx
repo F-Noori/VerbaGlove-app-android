@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, Button, TouchableOpacity, StyleSheet } from 'react-native';
 import { BleManager, Device } from 'react-native-ble-plx';
 import FontAwesome from 'react-native-vector-icons/FontAwesome5';
@@ -6,11 +6,21 @@ import { StackScreenProps } from '@react-navigation/stack';
 import { atob, btoa } from 'react-native-quick-base64'; // Convert Base64 for BLE
 import Tts from 'react-native-tts'; // Import TTS library
 
+
+
 const bleManager = new BleManager();
+const getTimestamp = () => Date.now(); // msecond
+
 
 const SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
 const RX_CHARACTERISTIC_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"; // Write
 const TX_CHARACTERISTIC_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"; // Notify
+
+//const SERVICE_UUID = "180A";
+//const RX_CHARACTERISTIC_UUID = "2A57"; // Write
+//const TX_CHARACTERISTIC_UUID = "2A57"; // Notify
+
+
 
 type RootStackParamList = {
   HomeScreen: { deviceId: string };
@@ -25,11 +35,14 @@ export default function HomeScreen({ route, navigation }: Props) {
   const [recognizedGesture, setRecognizedGesture] = useState<string>("Waiting for gesture...");
   const [isPlaying, setIsPlaying] = useState(false); // Play/Pause state
   const [isPaused, setIsPaused] = useState(false); // Pause state for text display
+  const lastSpokenRef = useRef<string | null>(null);
+
 
   useEffect(() => {
     Tts.setDefaultLanguage('en-US'); // Set language for TTS
     Tts.setDefaultRate(0.5); // Adjust speech rate (0.5 is slower, 1 is normal)
     Tts.setIgnoreSilentSwitch("ignore"); // Play even when phone is on silent
+
 
     const connectAndSubscribe = async () => {
       try {
@@ -47,8 +60,30 @@ export default function HomeScreen({ route, navigation }: Props) {
           if (characteristic?.value && !isPaused) { // Only update if not paused
             const decodedValue = atob(characteristic.value);
             console.log("📩 Received Gesture:", decodedValue);
-            setRecognizedGesture(decodedValue);
-            if (isPlaying) Tts.speak(decodedValue); // Automatically read out loud if playing
+
+            const receivedTime = getTimestamp(); //timestamp data received
+            console.log(`[Timestamp] BLE Data Received: ${receivedTime} ms`);
+
+            setRecognizedGesture(decodedValue); //update text in the ui
+
+            requestAnimationFrame(()=> {
+              const displayTime = getTimestamp(); // text display timestamp
+              const latency = displayTime - receivedTime;
+              console.log(`[Timestamp] Text Displayed on UI: ${displayTime} ms`);
+              console.log(`[Latency] Display Latency: ${latency} ms`);
+              
+            });
+            
+            //only speak if gesture has changed
+            if (isPlaying && decodedValue !== lastSpokenRef.current){
+              //const speechStartTime = getTimestamp();
+              //console.log(`[Timestamp] Speech Started: ${speechStartTime} ms`);
+
+              //const speechLatency = speechStartTime - displayTime;
+              //console.log(`[Latency] Speech Latency: ${speechLatency} ms`);
+              Tts.speak(decodedValue); // Automatically read out loud if playing
+              lastSpokenRef.current = decodedValue;
+            }
           }
         });
 
@@ -98,6 +133,7 @@ export default function HomeScreen({ route, navigation }: Props) {
     if (recognizedGesture !== "Waiting for gesture...") {
       Tts.speak(recognizedGesture); // Start reading the displayed text
       setIsPlaying(true); // Update the state to playing
+      lastSpokenRef.current = recognizedGesture;
     }
   };
 
